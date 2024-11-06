@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sudoku Game</title>
+    <style>
+        body {
+            font-family: 'Verdana', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #e3f2fd; /* Light blue background */
+            margin: 0;
+            color: #333;
+        }
+
+        h1 {
+            font-size: 2em;
+            color: #0d47a1; /* Dark blue title */
+        }
+
+        .sudoku-container {
+            display: grid;
+            grid-template-columns: repeat(9, 55px);
+            grid-gap: 3px;
+            border: 5px solid #1e88e5; /* Blue border */
+            background-color: #ffffff;
+            padding: 10px;
+        }
+
+        .cell {
+            width: 55px;
+            height: 55px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3em;
+            border: 1px solid #bbdefb; /* Light blue border */
+            background-color: #f1f8ff; /* Very light blue */
+            color: #1a237e; /* Darker blue text */
+        }
+
+        .cell input {
+            width: 100%;
+            height: 100%;
+            border: none;
+            text-align: center;
+            font-size: 1.3em;
+            background: none;
+            outline: none;
+            color: #1a237e; /* Darker blue for text */
+        }
+
+        .initial {
+            background-color: #c5cae9; /* Light purple */
+            font-weight: bold;
+            color: #1a237e;
+        }
+
+        .highlight {
+            background-color: #ffcdd2; /* Light red for duplicates */
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 12px;
+            font-size: 1em;
+            cursor: pointer;
+            background-color: #64b5f6; /* Medium blue */
+            color: #ffffff;
+            border: none;
+            border-radius: 5px;
+            transition: background 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #1e88e5; /* Darker blue on hover */
+        }
+
+        /* Popup style */
+        #popup {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px;
+            background-color: #ffffff;
+            border: 2px solid #1e88e5;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            font-size: 1.1em;
+            color: #1a237e;
+        }
+
+        #popup h2 {
+            margin: 0 0 10px;
+            color: #0d47a1; /* Darker blue */
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Sudoku Game</h1>
+    <div class="sudoku-container" id="sudoku-container">
+        <!-- The Sudoku cells will be created dynamically -->
+    </div>
+    <div class="controls">
+        <button onclick="giveHint()">Hint</button>
+        <button onclick="undo()">Undo</button>
+        <button onclick="redo()">Redo</button>
+    </div>
+    
+    <!-- Popup message -->
+    <div id="popup">
+        <h2>Congrats!! You have solved the puzzle!!!</h2>
+        <p>You have solved the puzzle!</p>
+        <button onclick="closePopup()">Close</button>
+    </div>
+
+    <script>
+        const sudokuContainer = document.getElementById('sudoku-container');
+        const initialPuzzle = [
+            [5, 3, '', '', 7, '', '', '', ''],
+            [6, '', '', 1, 9, 5, '', '', ''],
+            ['', 9, 8, '', '', '', '', 6, ''],
+            [8, '', '', '', 6, '', '', '', 3],
+            [4, '', '', 8, '', 3, '', '', 1],
+            [7, '', '', '', 2, '', '', '', 6],
+            ['', 6, '', '', '', '', 2, 8, ''],
+            ['', '', '', 4, 1, 9, '', '', 5],
+            ['', '', '', '', 8, '', '', 7, 9]
+        ];
+        
+        let history = [];  // History for undo/redo
+        let redoStack = []; // Redo stack for moves
+        let solutionCount = 0; // Count correct cells
+
+        // Initialize the board
+        function createBoard() {
+            for (let row = 0; row < 9; row++) {
+                for (let col = 0; col < 9; col++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.min = 1;
+                    input.max = 9;
+                    input.value = initialPuzzle[row][col] || '';
+                    input.disabled = initialPuzzle[row][col] ? true : false;
+                    if (initialPuzzle[row][col]) cell.classList.add('initial');
+
+                    input.addEventListener('input', () => handleInput(row, col, input));
+                    cell.appendChild(input);
+                    sudokuContainer.appendChild(cell);
+                }
+            }
+        }
+
+        // Handle input and check for duplicates
+        function handleInput(row, col, input) {
+            const value = parseInt(input.value);
+
+            if (isNaN(value) || value < 1 || value > 9) {
+                input.value = '';
+                return;
+            }
+
+            history.push({ row, col, value: input.value });
+            redoStack = [];
+
+            clearHighlights();
+            if (isDuplicate(row, col, value)) {
+                input.parentElement.classList.add('highlight');
+            } else {
+                solutionCount++;
+                checkCompletion();
+            }
+        }
+
+        // Check for duplicates in row, column, and 3x3 subgrid
+        function isDuplicate(row, col, value) {
+            for (let i = 0; i < 9; i++) {
+                // Check row, column, and subgrid
+                if (
+                    (sudokuContainer.children[row * 9 + i].querySelector('input').value == value && i !== col) ||
+                    (sudokuContainer.children[i * 9 + col].querySelector('input').value == value && i !== row) ||
+                    (sudokuContainer.children[
+                        Math.floor(row / 3) * 27 + Math.floor(col / 3) * 3 + Math.floor(i / 3) * 9 + (i % 3)
+                    ].querySelector('input').value == value && i !== (3 * (row % 3) + (col % 3)))
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Clear duplicate highlights
+        function clearHighlights() {
+            document.querySelectorAll('.highlight').forEach(cell => cell.classList.remove('highlight'));
+        }
+
+        // Check if the puzzle is complete
+        function checkCompletion() {
+            if (solutionCount === 81) {
+                document.getElementById('popup').style.display = 'block';
+            }
+        }
+
+        // Undo and Redo functions
+        function undo() {
+            if (history.length) {
+                const lastMove = history.pop();
+                const cell = sudokuContainer.children[lastMove.row * 9 + lastMove.col].querySelector('input');
+                redoStack.push({ row: lastMove.row, col: lastMove.col, value: cell.value });
+                cell.value = '';
+                clearHighlights();
+                solutionCount--;
+            }
+        }
+
+        function redo() {
+            if (redoStack.length) {
+                const move = redoStack.pop();
+                const cell = sudokuContainer.children[move.row * 9 + move.col].querySelector('input');
+                
+                // Apply the move back to the board
+                cell.value = move.value;
+        
+                // Push the move back to history
+                history.push({ row: move.row, col: move.col, value: move.value });
+        
+                solutionCount++;
+                checkCompletion();
+            }
+        }
+
+        // Give a hint
+        function giveHint() {
+            for (let i = 0; i < 81; i++) {
+                const cell = sudokuContainer.children[i].querySelector('input');
+                if (!cell.value) {
+                    cell.value = Math.floor(Math.random() * 9) + 1;
+                    solutionCount++;
+                    break;
+                }
+            }
+        }
+
+        // Close the popup
+        function closePopup() {
+            document.getElementById('popup').style.display = 'none';
+        }
+
+        createBoard();
+    </script>
+</body>
+</html>
